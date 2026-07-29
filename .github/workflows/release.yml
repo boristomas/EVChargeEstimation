@@ -68,14 +68,37 @@ jobs:
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
         run: |
-          if [ -z "$KEYSTORE_BASE64" ]; then
-            echo "Missing secret KEYSTORE_BASE64" >&2
+          missing=0
+          for name in KEYSTORE_BASE64 KEYSTORE_PASSWORD KEY_PASSWORD KEY_ALIAS; do
+            eval "val=\$$name"
+            if [ -z "$val" ]; then
+              echo "::error::Missing repository secret: $name"
+              echo "Add it under Settings → Secrets and variables → Actions"
+              missing=1
+            fi
+          done
+          if [ "$missing" -ne 0 ]; then
+            echo ""
+            echo "Required secrets:"
+            echo "  KEYSTORE_BASE64   = base64 of keystore/evcharge-release.jks"
+            echo "  KEYSTORE_PASSWORD = storePassword from keystore.properties"
+            echo "  KEY_PASSWORD      = keyPassword from keystore.properties"
+            echo "  KEY_ALIAS         = keyAlias (usually: evcharge)"
+            echo ""
+            echo "Encode keystore on Windows:"
+            echo '  [Convert]::ToBase64String([IO.File]::ReadAllBytes("keystore\\evcharge-release.jks")) | Set-Clipboard'
             exit 1
           fi
           mkdir -p keystore
-          echo "$KEYSTORE_BASE64" | base64 -d > keystore/evcharge-release.jks
+          # -d works on GNU base64; strip whitespace/newlines if secret was pasted with breaks
+          echo "$KEYSTORE_BASE64" | tr -d '\r\n\t ' | base64 -d > keystore/evcharge-release.jks
+          if [ ! -s keystore/evcharge-release.jks ]; then
+            echo "::error::KEYSTORE_BASE64 decoded to an empty file — re-encode and update the secret"
+            exit 1
+          fi
           printf 'storePassword=%s\nkeyPassword=%s\nkeyAlias=%s\nstoreFile=keystore/evcharge-release.jks\n' \
             "$KEYSTORE_PASSWORD" "$KEY_PASSWORD" "$KEY_ALIAS" > keystore.properties
+          echo "Keystore ready ($(wc -c < keystore/evcharge-release.jks) bytes)"
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
