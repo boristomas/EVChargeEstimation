@@ -7,6 +7,8 @@ import com.chupacabra.evchargeestimation.data.ChargeHistoryEntry
 import com.chupacabra.evchargeestimation.data.ChargeHistoryRepository
 import com.chupacabra.evchargeestimation.domain.ChargeEstimator
 import com.chupacabra.evchargeestimation.domain.DashboardOcrParser
+import com.chupacabra.evchargeestimation.update.AppUpdateChecker
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -16,6 +18,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.File
 
 data class CalculatorUiState(
     val currentPercent: String = "",
@@ -40,18 +44,33 @@ data class CalculatorUiState(
         }
 }
 
+data class AppUpdateUiState(
+    val checking: Boolean = false,
+    val available: AppUpdateChecker.AvailableUpdate? = null,
+    val downloading: Boolean = false,
+    val downloadProgress: Int = 0,
+    val downloadedApk: File? = null,
+    val message: String? = null,
+    val dismissed: Boolean = false
+)
+
 class ChargeViewModel(application: Application) : AndroidViewModel(application) {
 
     private val repository = ChargeHistoryRepository.get(application)
+    private val updateChecker = AppUpdateChecker(application.applicationContext)
 
     private val _ui = MutableStateFlow(CalculatorUiState())
     val ui: StateFlow<CalculatorUiState> = _ui.asStateFlow()
+
+    private val _update = MutableStateFlow(AppUpdateUiState())
+    val update: StateFlow<AppUpdateUiState> = _update.asStateFlow()
 
     val history: StateFlow<List<ChargeHistoryEntry>> = repository.history
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     private var saveJob: Job? = null
     private var lastSavedSignature: String? = null
+    private var updateJob: Job? = null
 
     fun onCurrentPercentChange(value: String) {
         _ui.update {
@@ -153,6 +172,123 @@ class ChargeViewModel(application: Application) : AndroidViewModel(application) 
     fun clearHistory() = repository.clear()
 
     fun deleteHistoryEntry(id: String) = repository.delete(id)
+
+    /** Quiet check on launch (no error banner if offline). */
+    fun checkForUpdatesOnLaunch() {
+        checkForUpdates(silent = true)
+    }
+
+    fun checkForUpdates(silent: Boolean = false) {
+        if (updateJob?.isActive == true) return
+        updateJob = viewModelScope.launch {
+            _update.update {
+                it.copy(checking = true, message = if (silent) it.message else null)
+            }
+            when (val result = updateChecker.checkForUpdate()) {
+                is AppUpdateChecker.CheckResult.UpdateAvailable -> {
+                    _update.update {
+                        it.copy(
+                            checking = false,
+                            available = result.update,
+                            downloadedApk = null,
+                            downloadProgress = 0,
+                            dismissed = false,
+                            message = null
+                        )
+                    }
+                }
+                AppUpdateChecker.CheckResult.UpToDate -> {
+                    _update.update {
+                        it.copy(
+                            checking = false,
+                            available = null,
+                            message = if (silent) null else "You’re on the latest version"
+                        )
+                    }
+                }
+                is AppUpdateChecker.CheckResult.Error -> {
+                    _update.update {
+                        it.copy(
+                            checking = false,
+                            message = if (silent) null else result.message
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    fun dismissUpdateBanner() {
+        _update.update { it.copy(dismissed = true) }
+    }
+
+    fun clearUpdateMessage() {
+        _update.update { it.copy(message = null) }
+    }
+
+    fun downloadUpdate() {
+        val update = _update.value.available ?: return
+        if (_update.value.downloading) return
+        viewModelScope.launch {
+            _update.update {
+                it.copy(downloading = true, downloadProgress = 0, message = null)
+            }
+            try {
+                val file = withContext(Dispatchers.IO) {
+                    updateChecker.downloadApk(update) { pct ->
+                        _update.update { state -> state.copy(downloadProgress = pct) }
+                    }
+                }
+                _update.update {
+                    it.copy(
+                        downloading = false,
+                        downloadProgress = 100,
+                        downloadedApk = file,
+                        message = "Download ready — tap Install"
+                    )
+                }
+            } catch (e: Exception) {
+                _update.update {
+                    it.copy(
+                        downloading = false,
+                        message = e.message ?: "Download failed"
+                    )
+                }
+            }
+        }
+    }
+
+    /**
+     * @return true if install was started; false if the user must allow install permission first
+     */
+    fun installDownloadedUpdate(): Boolean {
+        val file = _update.value.downloadedApk ?: return false
+        if (!updateChecker.canRequestInstalls()) {
+            getApplication<Application>().startActivity(
+                updateChecker.installPermissionSettingsIntent()
+            )
+            _update.update {
+                it.copy(message = "Allow installing apps from EV Charge, then tap Install again")
+            }
+            return false
+        }
+        return try {
+            updateChecker.installApk(file)
+            true
+        } catch (e: Exception) {
+            _update.update { it.copy(message = e.message ?: "Could not open installer") }
+            false
+        }
+    }
+
+    fun openReleasePage() {
+        val update = _update.value.available ?: return
+        try {
+            updateChecker.openReleasePage(update)
+        } catch (_: Exception) {
+            _update.update { it.copy(message = "Could not open the download page") }
+        }
+    }
 
     /**
      * Recompute estimate whenever inputs change. History is saved either immediately

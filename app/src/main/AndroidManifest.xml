@@ -10,6 +10,9 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
     <uses-permission android:name="android.permission.VIBRATE" />
+    <!-- Used only to check GitHub Releases for a newer APK (optional; app works offline). -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <!-- Calendar app discovery (timer/alarm are handled in-app). -->
     <queries>
@@ -31,6 +34,11 @@
         </intent>
         <package android:name="com.google.android.calendar" />
         <package android:name="com.android.calendar" />
+        <!-- Allow opening the system package installer for APK updates -->
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:mimeType="application/vnd.android.package-archive" />
+        </intent>
     </queries>
 
     <application
@@ -60,6 +68,16 @@
         <receiver
             android:name=".reminder.ChargeReminderReceiver"
             android:exported="false" />
+
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
 
         <!-- Required for CameraX on some devices -->
         <meta-data

@@ -25,11 +25,17 @@ import androidx.compose.material.icons.filled.Alarm
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Event
+import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material.icons.filled.Timer
+import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -38,6 +44,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -55,7 +62,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import com.chupacabra.evchargeestimation.BuildConfig
 import com.chupacabra.evchargeestimation.reminder.ChargeReminderReceiver
+import com.chupacabra.evchargeestimation.ui.AppUpdateUiState
 import com.chupacabra.evchargeestimation.ui.CalculatorUiState
 import com.chupacabra.evchargeestimation.ui.components.GlassCard
 import com.chupacabra.evchargeestimation.ui.components.NeonAccentBar
@@ -75,11 +84,27 @@ fun CalculatorScreen(
     onDesiredChange: (String) -> Unit,
     onClear: () -> Unit,
     onOpenCamera: () -> Unit,
+    updateState: AppUpdateUiState = AppUpdateUiState(),
+    onCheckUpdate: () -> Unit = {},
+    onDownloadUpdate: () -> Unit = {},
+    onInstallUpdate: () -> Unit = {},
+    onDismissUpdate: () -> Unit = {},
+    onOpenReleasePage: () -> Unit = {},
+    onClearUpdateMessage: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val focusManager = LocalFocusManager.current
+    val context = LocalContext.current
     val scheme = MaterialTheme.colorScheme
     val dark = isSystemInDarkTheme()
+
+    LaunchedEffect(updateState.message) {
+        val msg = updateState.message
+        if (!msg.isNullOrBlank()) {
+            Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+            onClearUpdateMessage()
+        }
+    }
 
     val fieldColors = OutlinedTextFieldDefaults.colors(
         focusedBorderColor = scheme.primary,
@@ -119,7 +144,20 @@ fun CalculatorScreen(
                 style = MaterialTheme.typography.bodyMedium,
                 color = scheme.onSurfaceVariant
             )
+            Text(
+                text = "Version ${BuildConfig.VERSION_NAME}",
+                style = MaterialTheme.typography.labelSmall,
+                color = scheme.onSurfaceVariant.copy(alpha = 0.75f)
+            )
         }
+
+        UpdateBanner(
+            updateState = updateState,
+            onDownload = onDownloadUpdate,
+            onInstall = onInstallUpdate,
+            onDismiss = onDismissUpdate,
+            onOpenPage = onOpenReleasePage
+        )
 
         GlassCard(modifier = Modifier.fillMaxWidth()) {
             Column(
@@ -255,7 +293,130 @@ fun CalculatorScreen(
 
         ResultCard(state = state, dark = dark)
 
+        TextButton(
+            onClick = onCheckUpdate,
+            modifier = Modifier.align(Alignment.CenterHorizontally)
+        ) {
+            if (updateState.checking) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(16.dp),
+                    strokeWidth = 2.dp,
+                    color = scheme.primary
+                )
+                Spacer(Modifier.width(8.dp))
+                Text("Checking…")
+            } else {
+                Icon(
+                    Icons.Default.SystemUpdate,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(Modifier.width(6.dp))
+                Text("Check for updates")
+            }
+        }
+
         Spacer(Modifier.height(8.dp))
+    }
+}
+
+@Composable
+private fun UpdateBanner(
+    updateState: AppUpdateUiState,
+    onDownload: () -> Unit,
+    onInstall: () -> Unit,
+    onDismiss: () -> Unit,
+    onOpenPage: () -> Unit
+) {
+    val scheme = MaterialTheme.colorScheme
+    val update = updateState.available
+    if (update == null || updateState.dismissed) return
+
+    GlassCard(
+        modifier = Modifier.fillMaxWidth(),
+        accentBorder = true,
+        cornerRadius = 16.dp
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    Icons.Default.SystemUpdate,
+                    contentDescription = null,
+                    tint = scheme.primary,
+                    modifier = Modifier.size(22.dp)
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    text = "Update available · v${update.versionName}",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.weight(1f)
+                )
+                IconButton(onClick = onDismiss, modifier = Modifier.size(32.dp)) {
+                    Icon(
+                        Icons.Default.Close,
+                        contentDescription = "Dismiss",
+                        tint = scheme.onSurfaceVariant
+                    )
+                }
+            }
+
+            if (updateState.downloading) {
+                LinearProgressIndicator(
+                    progress = { updateState.downloadProgress / 100f },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Text(
+                    text = "Downloading… ${updateState.downloadProgress}%",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = scheme.onSurfaceVariant
+                )
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                when {
+                    updateState.downloadedApk != null -> {
+                        Button(
+                            onClick = onInstall,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("Install")
+                        }
+                    }
+                    updateState.downloading -> {
+                        Button(
+                            onClick = {},
+                            enabled = false,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("Downloading…")
+                        }
+                    }
+                    else -> {
+                        Button(
+                            onClick = onDownload,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("Download")
+                        }
+                    }
+                }
+                OutlinedButton(
+                    onClick = onOpenPage,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text("Open page")
+                }
+            }
+        }
     }
 }
 

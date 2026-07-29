@@ -21,8 +21,13 @@ How to install
 
 Updates
 -------
-  Download a newer APK with a higher version number and install over the old one.
-  Keep using APKs signed with the same developer key so updates replace cleanly.
+  The app can check GitHub for a newer version (home screen → “Check for updates”,
+  or a banner when one is available). Download, then Install when prompted.
+
+  Or grab the latest APK from:
+    https://github.com/boristomas/EVChargeEstimation/releases/latest
+
+  Updates must be signed with the same developer key to install over the old app.
 
 Permissions you may be asked for
 --------------------------------

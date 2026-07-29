@@ -29,3 +29,9 @@
 
 # Keep reminder receiver entry (manifest)
 -keep class com.chupacabra.evchargeestimation.reminder.ChargeReminderReceiver { *; }
+
+# Gson models for GitHub Releases update check
+-keep class com.chupacabra.evchargeestimation.update.AppUpdateChecker$* { *; }
+-keepclassmembers class * {
+    @com.google.gson.annotations.SerializedName <fields>;
+}

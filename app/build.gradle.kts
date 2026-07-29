@@ -19,13 +19,26 @@ android {
         applicationId = "com.chupacabra.evchargeestimation"
         minSdk = 28
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0.0"
+        // Override from CI: ./gradlew assembleRelease -PversionName=1.0.1 -PversionCode=2
+        versionCode = (project.findProperty("versionCode") as String?)?.toIntOrNull() ?: 1
+        versionName = (project.findProperty("versionName") as String?) ?: "1.0.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
             useSupportLibrary = true
         }
+
+        // In-app updates poll the public GitHub Releases API for this repo.
+        buildConfigField(
+            "String",
+            "UPDATE_CHECK_URL",
+            "\"https://api.github.com/repos/boristomas/EVChargeEstimation/releases/latest\""
+        )
+        buildConfigField(
+            "String",
+            "GITHUB_RELEASES_URL",
+            "\"https://github.com/boristomas/EVChargeEstimation/releases\""
+        )
     }
 
     signingConfigs {

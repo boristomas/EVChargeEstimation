@@ -26,6 +26,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -72,12 +73,18 @@ private object Routes {
 fun EvChargeApp(viewModel: ChargeViewModel = viewModel()) {
     val navController = rememberNavController()
     val uiState by viewModel.ui.collectAsStateWithLifecycle()
+    val updateState by viewModel.update.collectAsStateWithLifecycle()
     val history by viewModel.history.collectAsStateWithLifecycle()
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentDestination = navBackStackEntry?.destination
     val isCamera = currentDestination?.route == Routes.CAMERA
     val scheme = MaterialTheme.colorScheme
     val activity = LocalContext.current as? ComponentActivity
+
+    // Quiet update check when the app opens (needs network; fails silently offline).
+    LaunchedEffect(Unit) {
+        viewModel.checkForUpdatesOnLaunch()
+    }
 
     // Keep portrait whenever we leave the camera route.
     DisposableEffect(isCamera) {
@@ -180,7 +187,14 @@ fun EvChargeApp(viewModel: ChargeViewModel = viewModel()) {
                         onMinutesPartToFullChange = viewModel::onMinutesPartToFullChange,
                         onDesiredChange = viewModel::onDesiredPercentChange,
                         onClear = viewModel::clearInputs,
-                        onOpenCamera = { navController.navigate(Routes.CAMERA) }
+                        onOpenCamera = { navController.navigate(Routes.CAMERA) },
+                        updateState = updateState,
+                        onCheckUpdate = { viewModel.checkForUpdates(silent = false) },
+                        onDownloadUpdate = viewModel::downloadUpdate,
+                        onInstallUpdate = { viewModel.installDownloadedUpdate() },
+                        onDismissUpdate = viewModel::dismissUpdateBanner,
+                        onOpenReleasePage = viewModel::openReleasePage,
+                        onClearUpdateMessage = viewModel::clearUpdateMessage
                     )
                 }
                 composable(Routes.HISTORY) {
