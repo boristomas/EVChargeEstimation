@@ -1,0 +1,37 @@
+EV Charge — install from APK (no app store)
+===========================================
+
+File
+----
+  EVChargeEstimation-1.0.0.apk
+
+What it needs
+-------------
+  - Android 9 or newer
+  - Camera optional (you can type numbers by hand)
+  - No account, no internet required for core features
+
+How to install
+--------------
+  1. Copy the APK to your phone (download link, USB, cloud drive, etc.).
+  2. Open the file on the phone.
+  3. If Android blocks it, allow “Install unknown apps” for your browser
+     or file manager (Settings → Apps → Special access → Install unknown apps).
+  4. Tap Install, then Open.
+
+Updates
+-------
+  Download a newer APK with a higher version number and install over the old one.
+  Keep using APKs signed with the same developer key so updates replace cleanly.
+
+Permissions you may be asked for
+--------------------------------
+  - Camera — only for scanning the car display
+  - Notifications — only if you set a charge timer/alarm
+
+Privacy
+-------
+  - No login
+  - No ads
+  - History stays on the phone
+  - Screen reading runs on the device

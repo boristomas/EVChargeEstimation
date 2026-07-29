@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="neon_cyan">#FF00E5FF</color>
+    <color name="neon_mint">#FF00FF9C</color>
+    <color name="deep_space">#FF05070D</color>
+    <color name="void_navy">#FF0B1020</color>
+    <color name="black">#FF000000</color>
+    <color name="white">#FFFFFFFF</color>
+    <color name="ic_launcher_background">#FF0B1020</color>
+</resources>
