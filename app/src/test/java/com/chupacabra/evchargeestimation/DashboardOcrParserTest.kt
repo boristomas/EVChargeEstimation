@@ -146,4 +146,61 @@ class DashboardOcrParserTest {
         assertEquals(30, parsed.currentPercent)
         assertEquals(120, parsed.minutesToFull)
     }
+
+    // --- Chevrolet Bolt–style cluster (app/sampledata/d9735234-c6cd-4cf0-b17c-247b7a1e72b2.jpg) ---
+
+    @Test
+    fun boltDashboard_estimatedChargeCompleteInHrs() {
+        // Realistic OCR dump of the Bolt charging screen from issue #1
+        val ocr = """
+            2:31 pm
+            12/21/2018
+            charging in progress
+            240 V
+            estimated charge
+            complete in 1 hrs 02 min
+            32931 mi
+            68 miles range
+            66°F
+            80%
+        """.trimIndent()
+
+        val parsed = DashboardOcrParser.parse(ocr)
+        assertEquals(80, parsed.currentPercent)
+        assertEquals(62, parsed.minutesToFull)
+    }
+
+    @Test
+    fun boltDashboard_singleLineOcr() {
+        val ocr =
+            "charging in progress 240 V estimated charge complete in 1 hrs 02 min 32931 mi 68 miles range 80% 66°F"
+        val parsed = DashboardOcrParser.parse(ocr)
+        assertEquals(80, parsed.currentPercent)
+        assertEquals(62, parsed.minutesToFull)
+    }
+
+    @Test
+    fun boltDashboard_ignoresWallClockAmPm() {
+        // "2:31 pm" must not become 151 minutes-to-full
+        val ocr = "2:31 pm estimated charge complete in 1 hrs 02 min 80%"
+        val parsed = DashboardOcrParser.parse(ocr)
+        assertEquals(80, parsed.currentPercent)
+        assertEquals(62, parsed.minutesToFull)
+    }
+
+    @Test
+    fun boltDashboard_ignoresMilesRangeAndVoltage() {
+        val ocr = "240 V  68 miles range  32931 mi  80%  complete in 45 min"
+        val parsed = DashboardOcrParser.parse(ocr)
+        assertEquals(80, parsed.currentPercent)
+        assertEquals(45, parsed.minutesToFull)
+    }
+
+    @Test
+    fun boltDashboard_hrsWithoutEstimatedPrefix() {
+        val ocr = "complete in 1 hrs 02 min  55%"
+        val parsed = DashboardOcrParser.parse(ocr)
+        assertEquals(55, parsed.currentPercent)
+        assertEquals(62, parsed.minutesToFull)
+    }
 }

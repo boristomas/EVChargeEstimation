@@ -3,16 +3,15 @@ package com.chupacabra.evchargeestimation.domain
 /**
  * Heuristic parser for EV dashboard OCR text.
  *
- * Tuned against real instrument-cluster photos (see app/sampledata/), especially
- * Peugeot-style charging screens that show:
- *   - "CHARGING COMPLETE IN 3 h 25 min"
- *   - "Charge of 42 km per hour"  (rate — must not be read as SOC)
- *   - "52 %" battery
- *   - range / odometer in km (must be ignored)
+ * Tuned against real instrument-cluster photos (see app/sampledata/), especially:
+ * - Peugeot / Stellantis charging screens:
+ *     "CHARGING COMPLETE IN 3 h 25 min", "Charge of 42 km per hour", "52 %"
+ * - Chevrolet Bolt–style clusters (issue photo d9735234-…):
+ *     "estimated charge complete in 1 hrs 02 min", gauge "80%", "68 miles range"
  *
  * Looks for:
  * - Battery percent: "45%", "SOC 45", "45 %", sometimes labeled charge/battery values
- * - Time to full: "1h 20m", "3 h 25 min", "80 min", "1:20", "COMPLETE IN …"
+ * - Time to full: "1h 20m", "3 h 25 min", "1 hrs 02 min", "80 min", "1:20", "COMPLETE IN …"
  *
  * Fully on-device; no network / cloud AI.
  */
@@ -28,6 +27,13 @@ object DashboardOcrParser {
     private data class PercentCandidate(val value: Int, val score: Int)
     private data class MinuteCandidate(val minutes: Int, val specificity: Int)
 
+    /**
+     * Hour unit token: h / hr / hrs / hour / hours (Bolt uses "hrs").
+     * Must not require a trailing space-only boundary before minutes digits.
+     */
+    private const val HOUR_UNIT = """h(?:rs?|ours?)?"""
+    private const val MIN_UNIT = """m(?:in(?:utes?)?)?"""
+
     /** Values with an explicit % sign. */
     private val percentWithSign = Regex("""(?<!\d)(\d{1,3})\s*%""")
 
@@ -42,30 +48,31 @@ object DashboardOcrParser {
     )
 
     /**
-     * Peugeot / Stellantis style: "CHARGING COMPLETE IN 3 h 25 min"
-     * Also tolerates OCR spacing quirks: "COMPLETEIN", "3h25min".
+     * "CHARGING COMPLETE IN 3 h 25 min" / Bolt "estimated charge complete in 1 hrs 02 min".
+     * Optional leading "charging" / "estimated charge" phrasing; OCR may glue words.
      */
     private val chargingCompleteIn = Regex(
-        """(?i)(?:charging\s*)?complete\s*in\s*(\d{1,2})\s*h(?:ours?)?\s*(\d{1,2})\s*m(?:in(?:utes?)?)?"""
+        """(?i)(?:(?:estimated\s+)?charg(?:e|ing)\s*)?complete\s*in\s*(\d{1,2})\s*$HOUR_UNIT\s*(\d{1,2})\s*$MIN_UNIT"""
     )
     private val chargingCompleteInHoursOnly = Regex(
         // Reject only when a minute component follows ("2 h 15 min"), not "2 h  30%"
-        """(?i)(?:charging\s*)?complete\s*in\s*(\d{1,2})\s*h(?:ours?)?(?!\s*\d{1,2}\s*m)"""
+        """(?i)(?:(?:estimated\s+)?charg(?:e|ing)\s*)?complete\s*in\s*(\d{1,2})\s*$HOUR_UNIT(?!\s*\d{1,2}\s*$MIN_UNIT)"""
     )
     private val chargingCompleteInMinutesOnly = Regex(
-        """(?i)(?:charging\s*)?complete\s*in\s*(\d{1,3})\s*(?:min(?:utes?)?|mins)\b"""
+        """(?i)(?:(?:estimated\s+)?charg(?:e|ing)\s*)?complete\s*in\s*(\d{1,3})\s*(?:min(?:utes?)?|mins)\b"""
     )
 
     private val hoursMinutes = Regex(
-        """(?i)(\d{1,2})\s*h(?:ours?)?\s*(?:and\s*)?(\d{1,2})\s*m(?:in(?:utes?)?)?"""
+        """(?i)(\d{1,2})\s*$HOUR_UNIT\s*(?:and\s*)?(\d{1,2})\s*$MIN_UNIT"""
     )
     private val hoursOnly = Regex(
-        """(?i)(\d{1,2})\s*h(?:ours?)?(?!\s*\d{1,2}\s*m)"""
+        """(?i)(\d{1,2})\s*$HOUR_UNIT(?!\s*\d{1,2}\s*$MIN_UNIT)"""
     )
     private val minutesOnlyLabeled = Regex(
         """(?i)(\d{1,3})\s*(?:min(?:utes?)?|mins)\b"""
     )
-    private val clockStyle = Regex("""(?i)\b(\d{1,2}):(\d{2})\b""")
+    /** Duration-like clocks; exclude wall-clock times with am/pm (e.g. "2:31 pm"). */
+    private val clockStyle = Regex("""(?i)\b(\d{1,2}):(\d{2})\b(?!\s*[ap]\.?m\.?\b)""")
     private val timeNearFull = Regex(
         """(?i)(?:full|remaining|left|until|to\s*100|charge\s*time|est\.?)[^\d]{0,20}(\d{1,3})\s*(?:min|mins|minutes|h|hr|hrs|hours)?"""
     )
@@ -79,7 +86,17 @@ object DashboardOcrParser {
 
     /** Distance / odo context — numbers next to these are not charge %. */
     private val distanceContext = Regex(
-        """(?i)\b\d{1,6}\s*km\b"""
+        """(?i)\b\d{1,6}\s*(?:km|mi(?:les?)?)\b(?:\s*range)?"""
+    )
+
+    /** AC voltage on charging screens (e.g. Bolt "240 V") — not a duration or SOC. */
+    private val voltageContext = Regex(
+        """(?i)\b\d{2,4}\s*v(?:olts?)?\b"""
+    )
+
+    /** Cabin / ambient temp (e.g. "66°F") — ignore. */
+    private val temperatureContext = Regex(
+        """(?i)\b\d{1,3}\s*°\s*[fc]\b|\b\d{1,3}\s*degrees?\b"""
     )
 
     fun parse(ocrText: String): ParsedDashboard {
@@ -116,17 +133,22 @@ object DashboardOcrParser {
     }
 
     /**
-     * Blank out charge-rate and pure distance snippets so their numbers
-     * don't compete with SOC / time-to-full.
+     * Blank out charge-rate, distance, voltage, and temperature snippets so
+     * their numbers don't compete with SOC / time-to-full.
      */
     private fun scrubNonChargeNoise(text: String): String {
         var scrubbed = text
         scrubbed = chargeRateSnippet.replace(scrubbed) { match ->
             " ".repeat(match.value.length)
         }
-        // Keep distance numbers from being read as bare times only when they
-        // appear as "NNN km" (range/odo). Percent extraction still uses %.
+        // Range/odo in km or miles (Bolt: "68 miles range", "32931 mi")
         scrubbed = distanceContext.replace(scrubbed) { match ->
+            " ".repeat(match.value.length)
+        }
+        scrubbed = voltageContext.replace(scrubbed) { match ->
+            " ".repeat(match.value.length)
+        }
+        scrubbed = temperatureContext.replace(scrubbed) { match ->
             " ".repeat(match.value.length)
         }
         return scrubbed
