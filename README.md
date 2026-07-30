@@ -14,28 +14,7 @@ Works offline for estimates, scan, history, and timers. Optional internet is onl
 
 After install, the app can **check for updates** itself (banner + “Check for updates” on the home screen). You still confirm the install when a new APK is ready — Android does not allow silent sideload updates.
 
-## Publish a new version (you)
-
-### One-time: GitHub Actions secrets
-
-In the GitHub repo → **Settings → Secrets and variables → Actions**, add:
-
-| Secret | Value |
-|--------|--------|
-| `KEYSTORE_BASE64` | Base64 of `keystore/evcharge-release.jks` |
-| `KEYSTORE_PASSWORD` | From your local `keystore.properties` |
-| `KEY_ALIAS` | `evcharge` |
-| `KEY_PASSWORD` | From your local `keystore.properties` |
-
-Encode the keystore (PowerShell):
-
-```powershell
-[Convert]::ToBase64String([IO.File]::ReadAllBytes("keystore\evcharge-release.jks")) | Set-Clipboard
-```
-
-(Paste into the `KEYSTORE_BASE64` secret.)
-
-**Back up** `keystore/evcharge-release.jks` and `keystore.properties` offline. Losing them means you cannot ship updates that install over the same app id.
+## How to publish a new version
 
 ### Ship a release
 
